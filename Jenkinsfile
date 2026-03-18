@@ -2,12 +2,12 @@ pipeline {
     agent any
     
     environment {
-        // AWS Configuration - REPLACE WITH YOUR VALUES
+        // AWS Configuration
         AWS_ACCOUNT_ID = '039108689342'
         AWS_REGION = 'us-east-1'
         ECR_REPO = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/devsecops-app"
         
-        // Docker Hub Configuration - REPLACE WITH YOUR VALUES
+        // Docker Hub Configuration
         DOCKER_HUB_USERNAME = 'your_dockerhub_username'
         DOCKER_HUB_REPO = "${DOCKER_HUB_USERNAME}/devsecops-app"
         
@@ -32,7 +32,7 @@ pipeline {
         stage('Checkout Code') {
             steps {
                 git branch: 'main', 
-                    url: 'https://github.com/YOUR_USERNAME/devsecops-pipeline.git'
+                    url: 'https://github.com/UmeshDOE/devsecops-pipeline.git'
             }
         }
         
@@ -134,7 +134,6 @@ pipeline {
                         appImage.push()
                         appImage.push('latest')
                         
-                        // Also push with Docker Hub username
                         sh """
                             docker tag ${APP_NAME}:${IMAGE_TAG} ${DOCKER_HUB_REPO}:${IMAGE_TAG}
                             docker tag ${APP_NAME}:${IMAGE_TAG} ${DOCKER_HUB_REPO}:latest
@@ -169,17 +168,13 @@ pipeline {
         stage('Deploy to Container') {
             steps {
                 sh '''
-                    # Stop and remove existing container if exists
                     docker stop ${APP_NAME} || true
                     docker rm ${APP_NAME} || true
-                    
-                    # Run new container
                     docker run -d \
                         --name ${APP_NAME} \
                         -p 80:80 \
                         --restart unless-stopped \
                         ${APP_NAME}:${IMAGE_TAG}
-                    
                     echo "Container deployed successfully!"
                 '''
             }
@@ -188,11 +183,8 @@ pipeline {
         stage('Smoke Test') {
             steps {
                 sh '''
-                    # Wait for container to be ready
                     echo "Waiting for container to start..."
                     sleep 15
-                    
-                    # Test application with retries
                     for i in {1..5}; do
                         if curl -f http://localhost:80 > /dev/null 2>&1; then
                             echo "Smoke test passed! Application is responding."
@@ -201,7 +193,6 @@ pipeline {
                         echo "Attempt $i: Waiting for application..."
                         sleep 5
                     done
-                    
                     echo "Smoke test failed! Application not responding."
                     exit 1
                 '''
@@ -211,16 +202,12 @@ pipeline {
         stage('Upload Reports to S3') {
             steps {
                 sh '''
-                    # Create timestamp for report folder
                     TIMESTAMP=$(date +%Y%m%d-%H%M%S)
                     REPORT_FOLDER="reports/${BUILD_NUMBER}-${TIMESTAMP}"
-                    
-                    # Upload all reports to S3
                     aws s3 cp trivy-fs-report.json s3://${S3_BUCKET}/${REPORT_FOLDER}/trivy-fs-report.json || true
                     aws s3 cp trivy-image-report.json s3://${S3_BUCKET}/${REPORT_FOLDER}/trivy-image-report.json || true
                     aws s3 cp scout-report.sarif s3://${S3_BUCKET}/${REPORT_FOLDER}/scout-report.sarif || true
                     aws s3 cp dependency-check-report/ s3://${S3_BUCKET}/${REPORT_FOLDER}/dependency-check/ --recursive || true
-                    
                     echo "Reports uploaded to s3://${S3_BUCKET}/${REPORT_FOLDER}/"
                 '''
             }
@@ -229,16 +216,11 @@ pipeline {
     
     post {
         always {
-            // Archive artifacts
             archiveArtifacts artifacts: '**/*.json,**/*.html,**/*.sarif,**/*.xml', allowEmptyArchive: true
-            
-            // Clean up Docker images to save space
             sh '''
                 docker image prune -f
                 docker container prune -f
             '''
-            
-            // Send email notification
             emailext (
                 to: 'admin@example.com',
                 subject: "Pipeline ${currentBuild.fullDisplayName} - ${currentBuild.result}",
@@ -246,4 +228,16 @@ pipeline {
                     <h2>Pipeline Execution Summary</h2>
                     <p><b>Project:</b> DevSecOps Pipeline</p>
                     <p><b>Build Number:</b> ${BUILD_NUMBER}</p>
-                    <p><b>Status:</b
+                    <p><b>Status:</b> ${currentBuild.result}</p>
+                    <p><b>URL:</b> ${BUILD_URL}</p>
+                """
+            )
+        }
+        success {
+            echo 'Pipeline completed successfully!'
+        }
+        failure {
+            echo 'Pipeline failed! Check logs for details.'
+        }
+    }
+}
