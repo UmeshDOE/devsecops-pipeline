@@ -8,7 +8,7 @@ pipeline {
         ECR_REPO = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/devsecops-app"
         
         // Docker Hub Configuration
-        DOCKER_HUB_USERNAME = 'your_dockerhub_username'
+        DOCKER_HUB_USERNAME = '9959996225'
         DOCKER_HUB_REPO = "${DOCKER_HUB_USERNAME}/devsecops-app"
         
         // Application Configuration
