@@ -24,10 +24,6 @@ pipeline {
         TRIVY_SEVERITY = 'HIGH,CRITICAL'
     }
     
-    tools {
-        jdk 'jdk17'
-    }
-    
     stages {
         stage('Checkout Code') {
             steps {
@@ -103,16 +99,6 @@ pipeline {
             }
         }
         
-        stage('Docker Scout Scan') {
-            steps {
-                sh '''
-                    echo "Running Docker Scout scan..."
-                    docker scout quickview ${APP_NAME}:${IMAGE_TAG} || true
-                    docker scout cves ${APP_NAME}:${IMAGE_TAG} --format sarif --output scout-report.sarif || true
-                '''
-            }
-        }
-        
         stage('Trivy Image Scan') {
             steps {
                 sh '''
@@ -120,31 +106,6 @@ pipeline {
                     trivy image --severity ${TRIVY_SEVERITY} --exit-code 0 --format table ${APP_NAME}:${IMAGE_TAG} || true
                     trivy image --format json --output trivy-image-report.json ${APP_NAME}:${IMAGE_TAG} || true
                 '''
-            }
-        }
-        
-        stage('Push to Docker Hub') {
-            when {
-                branch 'main'
-            }
-            steps {
-                script {
-                    docker.withRegistry('', 'dockerhub-creds') {
-                        def appImage = docker.image("${APP_NAME}:${IMAGE_TAG}")
-                        appImage.push()
-                        appImage.push('latest')
-                        
-                        sh """
-                            docker tag ${APP_NAME}:${IMAGE_TAG} ${DOCKER_HUB_REPO}:${IMAGE_TAG}
-                            docker tag ${APP_NAME}:${IMAGE_TAG} ${DOCKER_HUB_REPO}:latest
-                        """
-                        docker.withRegistry('', 'dockerhub-creds') {
-                            def hubImage = docker.image("${DOCKER_HUB_REPO}:${IMAGE_TAG}")
-                            hubImage.push()
-                            docker.image("${DOCKER_HUB_REPO}:latest").push()
-                        }
-                    }
-                }
             }
         }
         
@@ -206,7 +167,6 @@ pipeline {
                     REPORT_FOLDER="reports/${BUILD_NUMBER}-${TIMESTAMP}"
                     aws s3 cp trivy-fs-report.json s3://${S3_BUCKET}/${REPORT_FOLDER}/trivy-fs-report.json || true
                     aws s3 cp trivy-image-report.json s3://${S3_BUCKET}/${REPORT_FOLDER}/trivy-image-report.json || true
-                    aws s3 cp scout-report.sarif s3://${S3_BUCKET}/${REPORT_FOLDER}/scout-report.sarif || true
                     aws s3 cp dependency-check-report/ s3://${S3_BUCKET}/${REPORT_FOLDER}/dependency-check/ --recursive || true
                     echo "Reports uploaded to s3://${S3_BUCKET}/${REPORT_FOLDER}/"
                 '''
@@ -217,21 +177,8 @@ pipeline {
     post {
         always {
             archiveArtifacts artifacts: '**/*.json,**/*.html,**/*.sarif,**/*.xml', allowEmptyArchive: true
-            sh '''
-                docker image prune -f
-                docker container prune -f
-            '''
-            emailext (
-                to: 'admin@example.com',
-                subject: "Pipeline ${currentBuild.fullDisplayName} - ${currentBuild.result}",
-                body: """
-                    <h2>Pipeline Execution Summary</h2>
-                    <p><b>Project:</b> DevSecOps Pipeline</p>
-                    <p><b>Build Number:</b> ${BUILD_NUMBER}</p>
-                    <p><b>Status:</b> ${currentBuild.result}</p>
-                    <p><b>URL:</b> ${BUILD_URL}</p>
-                """
-            )
+            sh 'docker image prune -f || true'
+            sh 'docker container prune -f || true'
         }
         success {
             echo 'Pipeline completed successfully!'
